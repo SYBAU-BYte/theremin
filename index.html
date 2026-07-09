@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediaPipe Piano</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101214;
+      --panel: #191d21;
+      --text: #f5f1e8;
+      --muted: #aab4bb;
+      --line: rgba(255, 255, 255, 0.15);
+      --active: #38d89f;
+      --rose: #ff6f91;
+      --gold: #f6c85f;
+      --cyan: #5fc6ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    button,
+    select,
+    input {
+      font: inherit;
+    }
+
+    .app {
+      position: relative;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      height: 100%;
+      min-height: 520px;
+    }
+
+    .topbar {
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 60px;
+      padding: 10px clamp(12px, 3vw, 28px);
+      border-bottom: 1px solid var(--line);
+      background: rgba(16, 18, 20, 0.9);
+      backdrop-filter: blur(16px);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.05rem, 2vw, 1.45rem);
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .status {
+      max-width: min(38vw, 360px);
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 0.88rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .icon-button,
+    .select {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      background: #20262b;
+      color: var(--text);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    .icon-button {
+      display: inline-grid;
+      place-items: center;
+      width: 42px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .icon-button:hover,
+    .select:hover {
+      border-color: rgba(255, 255, 255, 0.28);
+      background: #2a3138;
+    }
+
+    .icon-button[aria-pressed="true"] {
+      border-color: rgba(56, 216, 159, 0.8);
+      color: #07110e;
+      background: var(--active);
+    }
+
+    .icon {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
+    }
+
+    .select {
+      width: 112px;
+      border-radius: 8px;
+      padding: 0 10px;
+      cursor: pointer;
+    }
+
+    .stage {
+      position: relative;
+      min-height: 0;
+      background:
+        linear-gradient(90deg, rgba(255, 111, 145, 0.12), transparent 28%, rgba(95, 198, 255, 0.11) 70%, rgba(246, 200, 95, 0.12)),
+        #111417;
+    }
+
+    video,
+    canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    video {
+      transform: scaleX(-1);
+      opacity: 0.7;
+      filter: saturate(0.95) contrast(1.05);
+    }
+
+    canvas {
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .target-band {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1;
+      height: clamp(190px, 34vh, 330px);
+      border-top: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(0, 0, 0, 0.18);
+      pointer-events: none;
+    }
+
+    .keyboard-wrap {
+      z-index: 5;
+      padding: 12px clamp(8px, 2vw, 20px) clamp(12px, 2vh, 18px);
+      border-top: 1px solid var(--line);
+      background: rgba(13, 15, 17, 0.94);
+      backdrop-filter: blur(18px);
+    }
+
+    .keyboard {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(14, minmax(34px, 1fr));
+      height: clamp(170px, 27vh, 250px);
+      max-width: 1180px;
+      margin: 0 auto;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .key {
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      min-width: 0;
+      border: 1px solid #1f2529;
+      cursor: pointer;
+      transition: transform 80ms ease, filter 80ms ease, background 80ms ease;
+    }
+
+    .key.white {
+      height: 100%;
+      border-radius: 0 0 7px 7px;
+      background: linear-gradient(#fffdfa, #e6e1d9);
+      color: #22282d;
+      box-shadow: inset 0 -10px 18px rgba(0, 0, 0, 0.12);
+    }
+
+    .key.black {
+      position: absolute;
+      top: 0;
+      z-index: 8;
+      width: calc(100% / 14 * 0.62);
+      height: 61%;
+      border-color: #060707;
+      border-radius: 0 0 6px 6px;
+      background: linear-gradient(#31383e, #070808);
+      color: #f6f1e8;
+      box-shadow: 0 12px 20px rgba(0, 0, 0, 0.45), inset 0 -8px 12px rgba(255, 255, 255, 0.05);
+    }
+
+    .key.active {
+      filter: brightness(1.08);
+      transform: translateY(4px);
+    }
+
+    .key.white.active {
+      background: linear-gradient(#dffbed, #9feacb);
+    }
+
+    .key.black.active {
+      background: linear-gradient(#34d39a, #0d654d);
+    }
+
+    .key-label {
+      width: min-content;
+      max-width: 100%;
+      padding: 0 2px 10px;
+      overflow: hidden;
+      font-size: clamp(0.64rem, 1.2vw, 0.82rem);
+      font-weight: 750;
+      text-align: center;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .black .key-label {
+      padding-bottom: 8px;
+      font-size: clamp(0.58rem, 1vw, 0.72rem);
+    }
+
+    .hint-line {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      max-width: 1180px;
+      min-height: 24px;
+      margin: 8px auto 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+      white-space: nowrap;
+    }
+
+    .meter {
+      width: min(230px, 34vw);
+      height: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.13);
+    }
+
+    .meter-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--rose), var(--gold), var(--cyan), var(--active));
+      transition: width 80ms linear;
+    }
+
+    @media (max-width: 700px) {
+      .app {
+        min-height: 480px;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        min-height: 74px;
+      }
+
+      .controls {
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .status {
+        order: 4;
+        width: 100%;
+        max-width: 46vw;
+        font-size: 0.76rem;
+      }
+
+      .select {
+        width: 92px;
+      }
+
+      .keyboard {
+        grid-template-columns: repeat(14, minmax(22px, 1fr));
+        height: clamp(150px, 25vh, 210px);
+      }
+
+      .key-label {
+        font-size: 0.58rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <h1>MediaPipe Piano</h1>
+      <div class="controls">
+        <span class="status" id="status">Camera idle</span>
+        <select class="select" id="waveform" aria-label="Waveform">
+          <option value="sine">Sine</option>
+          <option value="triangle" selected>Triangle</option>
+          <option value="square">Square</option>
+          <option value="sawtooth">Saw</option>
+        </select>
+        <button class="icon-button" id="muteButton" type="button" aria-label="Mute" aria-pressed="false" title="Mute">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M11 5 6 9H3v6h3l5 4V5z"></path>
+            <path d="M16 9.5a4 4 0 0 1 0 5"></path>
+            <path d="M19 7a8 8 0 0 1 0 10"></path>
+          </svg>
+        </button>
+        <button class="icon-button" id="cameraButton" type="button" aria-label="Start camera" aria-pressed="false" title="Start camera">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M23 7 16 12l7 5V7z"></path>
+            <rect x="1" y="5" width="15" height="14" rx="2"></rect>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="stage" id="stage" aria-label="Camera tracking area">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div class="target-band" aria-hidden="true"></div>
+    </section>
+
+    <section class="keyboard-wrap">
+      <div class="keyboard" id="keyboard" aria-label="Piano keyboard"></div>
+      <div class="hint-line">
+        <span id="handCount">0 hands</span>
+        <div class="meter" aria-hidden="true"><div class="meter-fill" id="motionMeter"></div></div>
+        <span id="activeNotes">Ready</span>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script>
+    const whiteNotes = [
+      { note: "C4", freq: 261.63 },
+      { note: "D4", freq: 293.66 },
+      { note: "E4", freq: 329.63 },
+      { note: "F4", freq: 349.23 },
+      { note: "G4", freq: 392.00 },
+      { note: "A4", freq: 440.00 },
+      { note: "B4", freq: 493.88 },
+      { note: "C5", freq: 523.25 },
+      { note: "D5", freq: 587.33 },
+      { note: "E5", freq: 659.25 },
+      { note: "F5", freq: 698.46 },
+      { note: "G5", freq: 783.99 },
+      { note: "A5", freq: 880.00 },
+      { note: "B5", freq: 987.77 }
+    ];
+
+    const blackNotes = [
+      { note: "C#4", freq: 277.18, afterWhite: 0 },
+      { note: "D#4", freq: 311.13, afterWhite: 1 },
+      { note: "F#4", freq: 369.99, afterWhite: 3 },
+      { note: "G#4", freq: 415.30, afterWhite: 4 },
+      { note: "A#4", freq: 466.16, afterWhite: 5 },
+      { note: "C#5", freq: 554.37, afterWhite: 7 },
+      { note: "D#5", freq: 622.25, afterWhite: 8 },
+      { note: "F#5", freq: 739.99, afterWhite: 10 },
+      { note: "G#5", freq: 830.61, afterWhite: 11 },
+      { note: "A#5", freq: 932.33, afterWhite: 12 }
+    ];
+
+    const keyboard = document.querySelector("#keyboard");
+    const stage = document.querySelector("#stage");
+    const video = document.querySelector("#video");
+    const canvas = document.querySelector("#overlay");
+    const ctx = canvas.getContext("2d");
+    const statusEl = document.querySelector("#status");
+    const cameraButton = document.querySelector("#cameraButton");
+    const muteButton = document.querySelector("#muteButton");
+    const waveform = document.querySelector("#waveform");
+    const handCount = document.querySelector("#handCount");
+    const activeNotesEl = document.querySelector("#activeNotes");
+    const motionMeter = document.querySelector("#motionMeter");
+
+    const fingerTips = [4, 8, 12, 16, 20];
+    const activeVoices = new Map();
+    const heldByFinger = new Map();
+    const previousTips = new Map();
+    let audioContext;
+    let masterGain;
+    let hands;
+    let camera;
+    let muted = false;
+    let cameraRunning = false;
+    let lastMotion = 0;
+
+    function buildKeyboard() {
+      whiteNotes.forEach((data, index) => {
+        const key = document.createElement("button");
+        key.type = "button";
+        key.className = "key white";
+        key.dataset.note = data.note;
+        key.dataset.freq = data.freq;
+        key.style.gridColumn = String(index + 1);
+        key.innerHTML = `<span class="key-label">${data.note}</span>`;
+        keyboard.appendChild(key);
+      });
+
+      blackNotes.forEach((data) => {
+        const key = document.createElement("button");
+        key.type = "button";
+        key.className = "key black";
+        key.dataset.note = data.note;
+        key.dataset.freq = data.freq;
+        key.style.left = `calc((100% / 14) * ${data.afterWhite + 0.69})`;
+        key.innerHTML = `<span class="key-label">${data.note}</span>`;
+        keyboard.appendChild(key);
+      });
+    }
+
+    function ensureAudio() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        masterGain = audioContext.createGain();
+        masterGain.gain.value = muted ? 0 : 0.72;
+        masterGain.connect(audioContext.destination);
+      }
+
+      if (audioContext.state === "suspended") {
+        audioContext.resume();
+      }
+    }
+
+    function playNote(note, freq, sourceId = "manual", velocity = 0.8) {
+      ensureAudio();
+      const voiceId = `${sourceId}:${note}`;
+
+      if (activeVoices.has(voiceId)) {
+        return;
+      }
+
+      const now = audioContext.currentTime;
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const filter = audioContext.createBiquadFilter();
+
+      oscillator.type = waveform.value;
+      oscillator.frequency.setValueAtTime(freq, now);
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(3600 + velocity * 2600, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.12 + velocity * 0.2, now + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.09 + velocity * 0.13, now + 0.16);
+
+      oscillator.connect(filter);
+      filter.connect(gain);
+      gain.connect(masterGain);
+      oscillator.start(now);
+
+      activeVoices.set(voiceId, { oscillator, gain, note });
+      setKeyActive(note, true);
+      updateActiveNotes();
+    }
+
+    function stopNote(note, sourceId = "manual") {
+      if (!audioContext) {
+        return;
+      }
+
+      const voiceId = `${sourceId}:${note}`;
+      const voice = activeVoices.get(voiceId);
+      if (!voice) {
+        return;
+      }
+
+      const now = audioContext.currentTime;
+      voice.gain.gain.cancelScheduledValues(now);
+      voice.gain.gain.setTargetAtTime(0.0001, now, 0.045);
+      voice.oscillator.stop(now + 0.18);
+      activeVoices.delete(voiceId);
+
+      if (![...activeVoices.values()].some((item) => item.note === note)) {
+        setKeyActive(note, false);
+      }
+      updateActiveNotes();
+    }
+
+    function setKeyActive(note, isActive) {
+      const key = keyboard.querySelector(`[data-note="${CSS.escape(note)}"]`);
+      if (key) {
+        key.classList.toggle("active", isActive);
+      }
+    }
+
+    function updateActiveNotes() {
+      const notes = [...new Set([...activeVoices.values()].map((voice) => voice.note))];
+      activeNotesEl.textContent = notes.length ? notes.join(" ") : "Ready";
+    }
+
+    function getKeyAtPoint(x, y) {
+      const keys = [...keyboard.querySelectorAll(".key")];
+      const blackKeys = keys.filter((key) => key.classList.contains("black"));
+      const whiteKeys = keys.filter((key) => key.classList.contains("white"));
+
+      for (const key of blackKeys) {
+        const rect = key.getBoundingClientRect();
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+          return key;
+        }
+      }
+
+      for (const key of whiteKeys) {
+        const rect = key.getBoundingClientRect();
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+          return key;
+        }
+      }
+
+      return null;
+    }
+
+    function trackFinger(fingerId, x, y) {
+      const previous = previousTips.get(fingerId);
+      const dy = previous ? y - previous.y : 0;
+      const dx = previous ? x - previous.x : 0;
+      const speed = Math.min(1, Math.hypot(dx, dy) / 38);
+      previousTips.set(fingerId, { x, y });
+      lastMotion = Math.max(lastMotion * 0.92, speed);
+
+      const key = getKeyAtPoint(x, y);
+      const currentNote = heldByFinger.get(fingerId);
+
+      if (key) {
+        const note = key.dataset.note;
+        const freq = Number(key.dataset.freq);
+        const strike = !currentNote || currentNote !== note || dy > 5;
+        if (currentNote && currentNote !== note) {
+          stopNote(currentNote, fingerId);
+        }
+        if (strike) {
+          playNote(note, freq, fingerId, Math.max(0.35, speed));
+        }
+        heldByFinger.set(fingerId, note);
+      } else if (currentNote) {
+        stopNote(currentNote, fingerId);
+        heldByFinger.delete(fingerId);
+      }
+    }
+
+    function releaseMissingFingers(seenFingers) {
+      [...heldByFinger.keys()].forEach((fingerId) => {
+        if (!seenFingers.has(fingerId)) {
+          stopNote(heldByFinger.get(fingerId), fingerId);
+          heldByFinger.delete(fingerId);
+          previousTips.delete(fingerId);
+        }
+      });
+    }
+
+    function resizeCanvas() {
+      const rect = stage.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(rect.width * scale));
+      canvas.height = Math.max(1, Math.round(rect.height * scale));
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    }
+
+    function drawFingerPoint(x, y, color) {
+      ctx.beginPath();
+      ctx.arc(x, y, 10, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.stroke();
+    }
+
+    function drawHand(landmarks, rect, color) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      window.HAND_CONNECTIONS.forEach(([start, end]) => {
+        const a = landmarks[start];
+        const b = landmarks[end];
+        ctx.beginPath();
+        ctx.moveTo((1 - a.x) * rect.width, a.y * rect.height);
+        ctx.lineTo((1 - b.x) * rect.width, b.y * rect.height);
+        ctx.stroke();
+      });
+
+      landmarks.forEach((landmark) => {
+        ctx.beginPath();
+        ctx.arc((1 - landmark.x) * rect.width, landmark.y * rect.height, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+        ctx.fill();
+      });
+    }
+
+    function onResults(results) {
+      resizeCanvas();
+      const rect = stage.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+
+      const seenFingers = new Set();
+      const handTotal = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+      handCount.textContent = `${handTotal} hand${handTotal === 1 ? "" : "s"}`;
+
+      if (results.multiHandLandmarks) {
+        results.multiHandLandmarks.forEach((landmarks, handIndex) => {
+          drawHand(landmarks, rect, handIndex ? "rgba(95, 198, 255, 0.68)" : "rgba(56, 216, 159, 0.68)");
+
+          fingerTips.forEach((tipIndex) => {
+            const landmark = landmarks[tipIndex];
+            const x = (1 - landmark.x) * rect.width;
+            const y = landmark.y * rect.height;
+            const fingerId = `${handIndex}-${tipIndex}`;
+            seenFingers.add(fingerId);
+            drawFingerPoint(x, y, handIndex ? "rgba(95, 198, 255, 0.9)" : "rgba(56, 216, 159, 0.9)");
+            trackFinger(fingerId, x, y);
+          });
+        });
+      }
+
+      releaseMissingFingers(seenFingers);
+      motionMeter.style.width = `${Math.round(Math.min(1, lastMotion) * 100)}%`;
+    }
+
+    async function startCamera() {
+      if (!window.Hands || !window.Camera) {
+        statusEl.textContent = "MediaPipe unavailable";
+        return;
+      }
+
+      ensureAudio();
+      statusEl.textContent = "Starting camera";
+      hands = new window.Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.68,
+        minTrackingConfidence: 0.58
+      });
+      hands.onResults(onResults);
+
+      camera = new window.Camera(video, {
+        onFrame: async () => {
+          await hands.send({ image: video });
+        },
+        width: 1280,
+        height: 720
+      });
+
+      await camera.start();
+      cameraRunning = true;
+      cameraButton.setAttribute("aria-pressed", "true");
+      cameraButton.setAttribute("aria-label", "Camera running");
+      statusEl.textContent = "Tracking";
+    }
+
+    function bindManualInput() {
+      keyboard.addEventListener("pointerdown", (event) => {
+        const key = event.target.closest(".key");
+        if (!key) {
+          return;
+        }
+        key.setPointerCapture(event.pointerId);
+        playNote(key.dataset.note, Number(key.dataset.freq), `pointer-${event.pointerId}`, 0.8);
+      });
+
+      ["pointerup", "pointercancel", "pointerleave"].forEach((eventName) => {
+        keyboard.addEventListener(eventName, (event) => {
+          const key = event.target.closest(".key");
+          if (key) {
+            stopNote(key.dataset.note, `pointer-${event.pointerId}`);
+          }
+        });
+      });
+    }
+
+    muteButton.addEventListener("click", () => {
+      muted = !muted;
+      muteButton.setAttribute("aria-pressed", String(muted));
+      muteButton.setAttribute("aria-label", muted ? "Unmute" : "Mute");
+      if (masterGain) {
+        masterGain.gain.setTargetAtTime(muted ? 0 : 0.72, audioContext.currentTime, 0.03);
+      }
+    });
+
+    cameraButton.addEventListener("click", async () => {
+      if (cameraRunning) {
+        statusEl.textContent = "Tracking";
+        return;
+      }
+
+      try {
+        await startCamera();
+      } catch (error) {
+        statusEl.textContent = "Camera blocked";
+        console.error(error);
+      }
+    });
+
+    window.addEventListener("resize", resizeCanvas);
+
+    buildKeyboard();
+    bindManualInput();
+    resizeCanvas();
+  </script>
+</body>
+</html>
